@@ -65,6 +65,7 @@ struct _FpiDeviceGoodixTls511
   GByteArray   *reply;
   guint8        cmd;
   GoodixExpect  expect;
+  guint         skipped;
   int           jump_after_read;
 
   /* TLS */
@@ -265,6 +266,9 @@ read_pack_cb (FpiUsbTransfer *transfer, FpDevice *dev,
   if (!handle_pack (self, buf[0], buf + 4, pack_len, &local_error))
     {
       g_byte_array_set_size (self->rx, 0);
+      if (!local_error && ++self->skipped > GOODIX_MAX_SKIPPED)
+        local_error = fpi_device_error_new_msg (FP_DEVICE_ERROR_PROTO,
+                                                "Too many unexpected messages");
       if (local_error)
         fpi_ssm_mark_failed (ssm, local_error);
       else
@@ -294,7 +298,10 @@ read_pack (FpiSsm *ssm, FpDevice *dev)
 static void
 read_expect (FpiSsm *ssm, FpDevice *dev, GoodixExpect expect)
 {
-  FPI_DEVICE_GOODIXTLS511 (dev)->expect = expect;
+  FpiDeviceGoodixTls511 *self = FPI_DEVICE_GOODIXTLS511 (dev);
+
+  self->expect = expect;
+  self->skipped = 0;
   read_pack (ssm, dev);
 }
 

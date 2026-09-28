@@ -28,6 +28,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <set>
 #include <tuple>
 #include <vector>
@@ -48,6 +49,11 @@ constexpr double angle_match = 0.05;
 constexpr std::size_t min_match = 5;
 constexpr guint32 format_magic = 0x31464753; /* "SGF1" */
 constexpr int descriptor_size = 128;
+constexpr gsize record_size = 2 * sizeof (float) + descriptor_size;
+/* Far above what SIFT finds on an upscaled 64x80 image; bounds the work a
+ * damaged or crafted print can cause. */
+constexpr guint32 max_keypoints = 4096;
+constexpr float max_coordinate = 65536;
 
 using Point = std::pair<int, int>;
 using Match = std::pair<Point, Point>;
@@ -81,7 +87,7 @@ sigfm_extract (const guint8 *pixels, int width, int height, int scale)
     {
       cv::Mat img (height, width, CV_8UC1, const_cast<guint8 *> (pixels));
       cv::Mat scaled;
-      auto *info = new SigfmInfo;
+      auto info = std::make_unique<SigfmInfo> ();
 
       if (scale > 1)
         cv::resize (img, scaled, cv::Size (), scale, scale, cv::INTER_CUBIC);
@@ -90,7 +96,7 @@ sigfm_extract (const guint8 *pixels, int width, int height, int scale)
 
       cv::SIFT::create ()->detectAndCompute (scaled, cv::noArray (),
                                              info->keypoints, info->descriptors);
-      return info;
+      return info.release ();
     }
   catch (const cv::Exception &e)
     {
@@ -134,6 +140,7 @@ sigfm_serialize (const SigfmInfo *info)
   return g_byte_array_free_to_bytes (out);
 }
 
+/* Prints come from storage, so everything is validated before use. */
 SigfmInfo *
 sigfm_deserialize (GBytes *data)
 {
@@ -147,26 +154,39 @@ sigfm_deserialize (GBytes *data)
 
   memcpy (header, p, sizeof (header));
   count = GUINT32_FROM_LE (header[1]);
-  if (GUINT32_FROM_LE (header[0]) != format_magic ||
-      len != sizeof (header) + (gsize) count * (2 * sizeof (float) + descriptor_size))
+  if (GUINT32_FROM_LE (header[0]) != format_magic || count > max_keypoints ||
+      (len - sizeof (header)) / record_size != count ||
+      (len - sizeof (header)) % record_size != 0)
     return nullptr;
 
-  auto *info = new SigfmInfo;
-  p += sizeof (header);
-  info->keypoints.reserve (count);
-  for (guint32 i = 0; i < count; i++, p += 2 * sizeof (float))
+  try
     {
-      float xy[2];
-      memcpy (xy, p, sizeof (xy));
-      info->keypoints.emplace_back (xy[0], xy[1], 1.0f);
+      auto info = std::make_unique<SigfmInfo> ();
+      p += sizeof (header);
+      info->keypoints.reserve (count);
+      for (guint32 i = 0; i < count; i++, p += 2 * sizeof (float))
+        {
+          float xy[2];
+          memcpy (xy, p, sizeof (xy));
+          /* The matcher casts coordinates to int */
+          if (!(xy[0] >= 0 && xy[0] < max_coordinate &&
+                xy[1] >= 0 && xy[1] < max_coordinate))
+            return nullptr;
+          info->keypoints.emplace_back (xy[0], xy[1], 1.0f);
+        }
+
+      info->descriptors.create (count, descriptor_size, CV_32F);
+      for (guint32 i = 0; i < count; i++)
+        for (int j = 0; j < descriptor_size; j++)
+          info->descriptors.at<float> (i, j) = *p++;
+
+      return info.release ();
     }
-
-  info->descriptors.create (count, descriptor_size, CV_32F);
-  for (guint32 i = 0; i < count; i++)
-    for (int j = 0; j < descriptor_size; j++)
-      info->descriptors.at<float> (i, j) = *p++;
-
-  return info;
+  catch (const std::exception &e)
+    {
+      g_warning ("Failed to load SIGFM features: %s", e.what ());
+      return nullptr;
+    }
 }
 
 int

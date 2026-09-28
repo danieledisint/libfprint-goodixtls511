@@ -31,6 +31,8 @@
 #define GOODIX_USB_CHUNK 64
 #define GOODIX_READ_SIZE 0x4000
 #define GOODIX_TIMEOUT 2000
+/* Stray packs (ACKs for other commands) skipped before giving up */
+#define GOODIX_MAX_SKIPPED 16
 
 /* Message pack flags */
 #define GOODIX_FLAGS_MSG 0xa0

@@ -122,7 +122,19 @@ distribution documents it (e.g. `auth sufficient pam_fprintd.so` at the top of
   sensors are not handled by this driver, even where the protocol looks similar.
 - No hardware finger detection: the sensor is polled while an operation is active.
 - The TLS PSK is the well-known all-zero key used by the Linux tools: the channel
-  protects nothing against someone with access to the USB bus.
+  protects nothing against someone with access to the USB bus. Such an attacker can
+  read the fingerprint images, replay them, or emulate the sensor with any USB device
+  reporting `27c6:5117` (matching is done on the host, so a fake sensor still needs an
+  image of an enrolled finger). A per-machine random PSK would fix this, but the sensor
+  only accepts a PSK wrapped by Goodix's white-box cipher, which is not public; the
+  only known wrapped PSK is the all-zero one.
+- Hardening worth applying on the host:
+  - only accept the sensor on an internal port, e.g. a udev rule setting
+    `ATTR{authorized}="0"` for `27c6:5117` when `ATTR{removable}!="fixed"`;
+  - rate-limit fingerprint unlock on lock screens that retry forever: run
+    `pam_fprintd.so max-tries=1` between `pam_faillock.so preauth` and
+    `pam_faillock.so authfail`, counting only `maxtries` (timeouts and a busy sensor
+    return other codes and should not count).
 - Stored prints contain SIFT features of the enrollment images (biometric data), kept by
   fprintd in `/var/lib/fprint` like any other driver's prints.
 - The match threshold (40) has not been validated on a large population.
