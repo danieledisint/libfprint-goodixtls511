@@ -25,23 +25,9 @@ work on this family; it is not a claim that other `511x` sensors work.
 
 ## Status
 
-| | |
-|---|---|
-| Device | `27c6:5117` only, firmware `GF_ST411SEC_APP_12109` (installed by the provisioning tool) |
-| Features | enroll, verify, identify (host-side matching, prints stored by fprintd) |
-| Base | libfprint 1.94.100 |
-| Tested on | one sensor, Arch Linux, fprintd 1.94.5 |
-
-Results on that sensor:
-
-- enrollment: 15/15 stages accepted;
-- verification with the enrolled finger: 8/8 after the final fixes;
-- verification with other fingers: 14/14 rejected (scores 0–1, threshold 40);
-- on a recorded set (20 touches of the enrolled finger, 21 of other fingers, one person,
-  random 15-touch templates): ~82% accepted at the first attempt, 0 false accepts.
-
-These numbers come from a single person and a small set: they show the approach works,
-they are not a measurement of security. Reports from other units are very welcome.
+| Device | Firmware | Features | Based on |
+|---|---|---|---|
+| `27c6:5117` only | `GF_ST411SEC_APP_12109`, installed by the provisioning tool | enroll, verify, identify (host-side matching, prints stored by fprintd) | libfprint 1.94.100 |
 
 ## How it works
 
@@ -53,8 +39,8 @@ they are not a measurement of security. Reports from other units are very welcom
 - The hardware finger-detection mode (FDT) does not work with the known parameters, so
   while an operation is running the driver polls ~6 frames/s and detects the finger
   against a background frame. Partial touches are rejected with "center your finger".
-- The sensor is too small for libfprint's NBIS minutiae matcher (0–3 minutiae per image,
-  every score 0), so the driver matches on the host with **SIGFM** (SIFT keypoints +
+- The sensor is too small for libfprint's NBIS minutiae matcher (too few minutiae per
+  image to match reliably), so the driver matches on the host with **SIGFM** (SIFT keypoints +
   geometric consistency, via OpenCV) and stores the features of each enrollment sample
   in the fprintd print. The rest of libfprint is untouched.
 
@@ -78,7 +64,7 @@ makepkg -si        # replaces libfprint / libfprint-git / libfprint-tod
 | Debian / Ubuntu | `git meson ninja-build pkg-config g++ libglib2.0-dev libgusb-dev libgudev-1.0-dev libpixman-1-dev libssl-dev libopencv-dev gobject-introspection libgirepository1.0-dev` |
 | Fedora | `git meson gcc gcc-c++ glib2-devel libgusb-devel libgudev-devel pixman-devel openssl-devel opencv-devel gobject-introspection-devel` |
 
-Only Arch has been tested; the other lists are best effort. OpenCV ≥ 4.5 and OpenSSL ≥ 3
+The Arch package is the reference build; the other lists are best effort. OpenCV ≥ 4.5 and OpenSSL ≥ 3
 are required.
 
 `build.sh --install` writes over the files of your libfprint package, so a later
@@ -139,8 +125,7 @@ distribution documents it (e.g. `auth sufficient pam_fprintd.so` at the top of
   protects nothing against someone with access to the USB bus.
 - Stored prints contain SIFT features of the enrollment images (biometric data), kept by
   fprintd in `/var/lib/fprint` like any other driver's prints.
-- The match threshold (40) was chosen with a large margin over the impostor scores
-  seen (≤ 5); it was not validated on a large population.
+- The match threshold (40) has not been validated on a large population.
 
 ## Credits and license
 
