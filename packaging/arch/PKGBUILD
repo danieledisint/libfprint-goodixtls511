@@ -5,7 +5,7 @@ pkgname=libfprint-goodixtls511
 _libfprint=1.94.100
 _driver=0.1.0
 pkgver=${_libfprint}.goodixtls511.${_driver}
-pkgrel=1
+pkgrel=2
 pkgdesc="libfprint with the goodixtls511 driver for the Goodix 27c6:5117 fingerprint reader"
 url="https://github.com/danieledisint/libfprint-goodixtls511"
 arch=(x86_64)
@@ -29,7 +29,7 @@ makedepends=(
 )
 optdepends=('python-pyusb: goodix511-provision sensor setup tool')
 provides=("libfprint=${_libfprint}" libfprint-2.so)
-conflicts=(libfprint libfprint-git libfprint-tod)
+conflicts=(libfprint libfprint-git libfprint-tod libfprint-goodixtls511-git)
 groups=(fprint)
 source=("libfprint::git+https://gitlab.freedesktop.org/libfprint/libfprint.git#tag=v${_libfprint}"
         "goodixtls511::git+${url}.git#tag=v${_driver}")
