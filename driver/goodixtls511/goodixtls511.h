@@ -116,13 +116,13 @@ static const guint8 goodix_fdt_mode_2[] = {
 };
 
 /* Software finger detection: mean absolute difference from the background
- * frame (12-bit units). Measured: ~3-7 without finger, >1200 with finger. */
+ * frame (12-bit units), with hysteresis between finger on and off. */
 #define GOODIX_FINGER_ON_THRESHOLD 150
 #define GOODIX_FINGER_OFF_THRESHOLD 60
 #define GOODIX_POLL_INTERVAL 50
 
-/* Host-side matching (SIGFM). Validated on 64x80 captures: impostor scores
- * stayed at 0-5, genuine scores are mostly in the hundreds. */
+/* Host-side matching (SIGFM): enrollment samples, upscale factor before SIFT,
+ * minimum keypoints per image, match score threshold, print format version. */
 #define GOODIX_ENROLL_STAGES 15
 #define GOODIX_SIGFM_SCALE 2
 #define GOODIX_SIGFM_MIN_KEYPOINTS 30
