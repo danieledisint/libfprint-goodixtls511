@@ -1,5 +1,5 @@
 /*
- * Goodix 511x (TLS) driver for libfprint
+ * Goodix 27c6:5117 (TLS) driver for libfprint
  * Copyright (C) 2026 goodixtls511 contributors
  *
  * Protocol knowledge and MCU configuration come from goodix-fp-dump and the

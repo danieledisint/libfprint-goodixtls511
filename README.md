@@ -10,6 +10,12 @@ $ lsusb | grep 27c6
 Bus 001 Device 002: ID 27c6:5117 Shenzhen Goodix Technology Co.,Ltd. Fingerprint Reader
 ```
 
+**This driver was developed for, and tested only with, the Goodix `27c6:5117`.** It
+declares only that USB ID and supports no other sensor. The name `goodixtls511` follows
+libfprint's convention of naming drivers after the chip family (as `goodixmoc`,
+`elanmoc` or `vfs5011` do) and matches the name used by earlier reverse-engineering
+work on this family; it is not a claim that other `511x` sensors work.
+
 > [!WARNING]
 > Before the driver can talk to the sensor, the sensor has to be **provisioned**: its
 > firmware is erased and re-flashed, and the key it shares with the Windows driver is
@@ -126,8 +132,8 @@ distribution documents it (e.g. `auth sufficient pam_fprintd.so` at the top of
 
 ## Limitations and security notes
 
-- Only `27c6:5117` with firmware `GF_ST411SEC_APP_12109`. Other Goodix 51xx sensors
-  (e.g. `27c6:5110`) are close relatives but untested.
+- Only `27c6:5117` with firmware `GF_ST411SEC_APP_12109` is supported. Other Goodix
+  sensors are not handled by this driver, even where the protocol looks similar.
 - No hardware finger detection: the sensor is polled while an operation is active.
 - The TLS PSK is the well-known all-zero key used by the Linux tools: the channel
   protects nothing against someone with access to the USB bus.

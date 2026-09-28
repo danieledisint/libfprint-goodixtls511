@@ -3,9 +3,9 @@
 
 pkgname=libfprint-goodixtls511
 _libfprint=1.94.100
-_driver=0.1.0
+_driver=0.1.1
 pkgver=${_libfprint}.goodixtls511.${_driver}
-pkgrel=2
+pkgrel=1
 pkgdesc="libfprint with the goodixtls511 driver for the Goodix 27c6:5117 fingerprint reader"
 url="https://github.com/danieledisint/libfprint-goodixtls511"
 arch=(x86_64)
