@@ -1,0 +1,104 @@
+diff --git a/data/autosuspend.hwdb b/data/autosuspend.hwdb
+index dcf2d113..5e608dbb 100644
+--- a/data/autosuspend.hwdb
++++ b/data/autosuspend.hwdb
+@@ -256,6 +256,11 @@ usb:v27C6p6984*
+  ID_AUTOSUSPEND=1
+  ID_PERSIST=0
+ 
++# Supported by libfprint driver goodixtls511
++usb:v27C6p5117*
++ ID_AUTOSUSPEND=1
++ ID_PERSIST=0
++
+ # Supported by libfprint driver mafpmoc
+ usb:v3274p8012*
+  ID_AUTOSUSPEND=1
+@@ -509,7 +514,6 @@ usb:v2541p0236*
+ usb:v2541p9711*
+ usb:v27C6p5042*
+ usb:v27C6p5110*
+-usb:v27C6p5117*
+ usb:v27C6p5120*
+ usb:v27C6p5125*
+ usb:v27C6p5201*
+diff --git a/libfprint/fprint-list-udev-hwdb.c b/libfprint/fprint-list-udev-hwdb.c
+index 539f3e69..c2658d2e 100644
+--- a/libfprint/fprint-list-udev-hwdb.c
++++ b/libfprint/fprint-list-udev-hwdb.c
+@@ -158,7 +158,6 @@ static const FpIdEntry allowlist_id_table[] = {
+   { .vid = 0x2541, .pid = 0x9711 },
+   { .vid = 0x27c6, .pid = 0x5042 },
+   { .vid = 0x27c6, .pid = 0x5110 },
+-  { .vid = 0x27c6, .pid = 0x5117 },
+   { .vid = 0x27c6, .pid = 0x5120 },
+   { .vid = 0x27c6, .pid = 0x5125 },
+   { .vid = 0x27c6, .pid = 0x5201 },
+diff --git a/libfprint/meson.build b/libfprint/meson.build
+index f11533ca..41b692eb 100644
+--- a/libfprint/meson.build
++++ b/libfprint/meson.build
+@@ -116,6 +116,10 @@ driver_sources = {
+     ),
+     'etes603' : files('drivers/etes603.c'),
+     'egis0570' : files('drivers/egis0570.c'),
++    'goodixtls511' : files(
++        'drivers/goodixtls511/goodixtls511.c',
++        'drivers/goodixtls511/sigfm.cpp',
++    ),
+     'egismoc' : files('drivers/egismoc/egismoc.c'),
+     'egis_etu905' : files('drivers/egismoc/egis_etu905.c'),
+     'vfs0050' : files('drivers/vfs0050.c'),
+@@ -146,6 +150,7 @@ helper_sources = {
+     'aesx660': files('drivers/aesx660.c'),
+     'aes3k': files('drivers/aes3k.c'),
+     'openssl': files(),
++    'opencv': files(),
+     'pixman': files(),
+     'udev': files(),
+     'virtual': files('drivers/virtual-device-listener.c'),
+diff --git a/meson.build b/meson.build
+index ab09dc1d..95a54d38 100644
+--- a/meson.build
++++ b/meson.build
+@@ -141,6 +141,7 @@ drivers_info = {
+     'upeksonly': {},
+     'upekts': {},
+     'goodixmoc': {},
++    'goodixtls511': { 'helper': ['openssl', 'opencv'] },
+     'nb1010': {},
+     'fpcmoc': {},
+     'realtek': {},
+@@ -243,6 +244,32 @@ foreach i : driver_helpers
+         endif
+ 
+         optional_deps += openssl_dep
++    elif i == 'opencv'
++        opencv_pc = dependency('opencv5', required: false)
++        opencv_features = 'opencv_features'
++        if not opencv_pc.found()
++            opencv_pc = dependency('opencv4', version: '>= 4.5', required: false)
++            opencv_features = 'opencv_features2d'
++        endif
++        if not opencv_pc.found()
++            error('OpenCV is required for @0@'.format(driver))
++        endif
++
++        # Link only the modules the driver uses. The pkg-config file lists
++        # every module (some need optional deps such as VTK), and passing it
++        # as a dependency leaks that list into the GIR scanner link, so only
++        # the include directory is taken from it.
++        opencv_libdir = opencv_pc.get_variable(pkgconfig: 'libdir')
++        opencv_incdir = opencv_pc.get_variable(pkgconfig: 'includedir_new',
++            default_value: opencv_pc.get_variable(pkgconfig: 'includedir'))
++        opencv_dep = declare_dependency(compile_args: ['-I' + opencv_incdir], dependencies: [
++            cpp.find_library('opencv_core', dirs: opencv_libdir),
++            cpp.find_library('opencv_imgproc', dirs: opencv_libdir),
++            cpp.find_library('opencv_flann', dirs: opencv_libdir),
++            cpp.find_library(opencv_features, dirs: opencv_libdir),
++        ])
++
++        optional_deps += opencv_dep
+     elif i == 'udev'
+         install_udev_rules = true
+ 

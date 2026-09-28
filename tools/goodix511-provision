@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+#
+# Provisioning tool for the Goodix 27c6:5117 fingerprint sensor.
+#
+# Copyright (c) 2022 Goodix Fingerprint Linux Development (goodix-fp-dump,
+#   protocol and provisioning sequence)
+# Copyright (c) 2026 goodixtls511 contributors
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+"""Check or provision a Goodix 27c6:5117 sensor for the goodixtls511 driver.
+
+  goodix511-provision status      read-only: firmware and PSK state
+  goodix511-provision provision   erase the firmware, write the known PSK and
+                                  flash GF_ST411SEC_APP_12109
+
+Provisioning replaces the key shared with the Windows driver: afterwards the
+reader no longer works on Windows until the Windows driver re-provisions it.
+"""
+
+import argparse
+import hashlib
+import struct
+import sys
+import time
+import urllib.request
+
+try:
+    import usb.core
+    import usb.util
+except ImportError:
+    sys.exit("pyusb is required (python-pyusb / python3-usb / pip install pyusb)")
+
+VID, PID = 0x27C6, 0x5117
+INTERFACE, EP_OUT, EP_IN = 1, 0x01, 0x81
+
+TARGET_FIRMWARE = "GF_ST411SEC_APP_12109"
+IAP_FIRMWARE = "MILAN_ST411SEC_IAP_12001"
+VALID_FIRMWARE_PREFIX = "GF_ST411SEC_APP_121"
+FIRMWARE_URL = ("https://raw.githubusercontent.com/goodix-fp-linux-dev/goodix-firmware/"
+                "7b9a828d1d14dee587d9c900505233188c23a92d/51x7/GF_ST411SEC_APP_12109.bin")
+FIRMWARE_SHA256 = "100fc8a9fc3b37d018e6ffc7cd84ac7b28c8f1f71e9e8d7b94c1b1a96bf8a585"
+
+PSK_FLAGS_HASH = 0xBB020003
+PSK_FLAGS_WRITE = 0xBB010003
+# All-zero PSK, wrapped for the sensor ("white box") and the hash it reports
+PSK_WHITE_BOX = bytes.fromhex(
+    "ec35ae3abb45ed3f12c4751f1e5c2cc05b3c5452e9104d9f2a3118644f37a04b"
+    "6fd66b1d97cf80f1345f76c84f03ff30bb51bf308f2a9875c41e6592cd2a2f9e"
+    "60809b17b5316037b69bb2fa5d4c8ac31edb3394046ec06bbdacc57da6a756c5")
+PSK_HASH = bytes.fromhex(
+    "ba1a86037c1d3c71c3af344955bd69a9a9861d9e911fa24985b677e8dbd72d43")
+
+FLAGS_MSG = 0xA0
+CMD_NOP, CMD_ENABLE_CHIP, CMD_RESET = 0x00, 0x96, 0xA2
+CMD_ERASE_APP, CMD_FIRMWARE_VERSION, CMD_ACK = 0xA4, 0xA8, 0xB0
+CMD_PSK_WRITE, CMD_PSK_READ = 0xE0, 0xE4
+CMD_WRITE_FIRMWARE, CMD_CHECK_FIRMWARE = 0xF0, 0xF4
+FIRMWARE_CHUNK = 1008
+
+
+def crc32_mpeg2(data):
+    crc = 0xFFFFFFFF
+    for byte in data:
+        crc ^= byte << 24
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x04C11DB7) if crc & 0x80000000 else crc << 1
+            crc &= 0xFFFFFFFF
+    return crc
+
+
+class Sensor:
+
+    def __init__(self, timeout=10):
+        deadline = time.time() + timeout
+        while True:
+            self.dev = usb.core.find(idVendor=VID, idProduct=PID)
+            if self.dev is not None:
+                try:
+                    if self.dev.is_kernel_driver_active(INTERFACE):
+                        self.dev.detach_kernel_driver(INTERFACE)
+                    usb.util.claim_interface(self.dev, INTERFACE)
+                    break
+                except usb.core.USBError:
+                    usb.util.dispose_resources(self.dev)
+            if time.time() > deadline:
+                sys.exit("Goodix 27c6:5117 not found or busy (is fprintd using it?)")
+            time.sleep(0.2)
+        self._drain()
+
+    def close(self):
+        usb.util.dispose_resources(self.dev)
+
+    def _drain(self):
+        try:
+            while True:
+                self.dev.read(EP_IN, 0x4000, 100)
+        except usb.core.USBTimeoutError:
+            pass
+
+    def _write(self, cmd, payload, checksum=True):
+        msg = bytes([cmd]) + struct.pack("<H", len(payload) + 1) + payload
+        msg += bytes([(0xAA - sum(msg)) & 0xFF if checksum else 0x88])
+        pack = bytes([FLAGS_MSG]) + struct.pack("<H", len(msg))
+        pack += bytes([sum(pack) & 0xFF]) + msg
+        pack += b"\x00" * (-len(pack) % 64)
+        self.dev.write(EP_OUT, pack, 2000)
+
+    def _read(self, cmd, timeout=2000):
+        while True:
+            data = bytes(self.dev.read(EP_IN, 0x4000, timeout))
+            if data[0] != FLAGS_MSG or (sum(data[:3]) & 0xFF) != data[3]:
+                raise IOError("invalid message pack")
+            msg = data[4:4 + struct.unpack("<H", data[1:3])[0]]
+            length = struct.unpack("<H", msg[1:3])[0]
+            if msg[0] == CMD_ACK and cmd != CMD_ACK:
+                continue  # late ACK of an earlier command
+            if msg[0] != cmd:
+                raise IOError(f"reply 0x{msg[0]:02x} while waiting for 0x{cmd:02x}")
+            return msg[3:2 + length]
+
+    def command(self, cmd, payload=b"", reply=True):
+        self._write(cmd, payload)
+        ack = self._read(CMD_ACK)
+        if ack[0] != cmd or not ack[1] & 1:
+            raise IOError(f"missing ACK for 0x{cmd:02x}")
+        return self._read(cmd) if reply else None
+
+    def init(self):
+        self._write(CMD_NOP, b"\x00\x00\x00\x00", checksum=False)
+        self.command(CMD_ENABLE_CHIP, b"\x01\x00", reply=False)
+        self._write(CMD_NOP, b"\x00\x00\x00\x00", checksum=False)
+
+    def firmware(self):
+        return self.command(CMD_FIRMWARE_VERSION, b"\x00\x00").split(b"\x00")[0].decode()
+
+    def psk_ok(self):
+        r = self.command(CMD_PSK_READ, struct.pack("<II", PSK_FLAGS_HASH, 0))
+        if r[0] != 0:
+            return False
+        flags, length = struct.unpack("<II", r[1:9])
+        return flags == PSK_FLAGS_HASH and r[9:9 + length] == PSK_HASH
+
+    def write_psk(self):
+        data = struct.pack("<II", PSK_FLAGS_WRITE, len(PSK_WHITE_BOX)) + PSK_WHITE_BOX
+        if self.command(CMD_PSK_WRITE, data)[0] != 0:
+            raise IOError("PSK write refused")
+
+    def erase_app(self):
+        self.command(CMD_ERASE_APP, b"\x00\x00", reply=False)
+
+    def flash(self, firmware):
+        for offset in range(0, len(firmware), FIRMWARE_CHUNK):
+            chunk = firmware[offset:offset + FIRMWARE_CHUNK]
+            r = self.command(CMD_WRITE_FIRMWARE, struct.pack("<II", offset, len(chunk)) + chunk)
+            if r[0] != 1:
+                raise IOError(f"firmware write failed at offset {offset}")
+            print(f"\r  flashing {offset + len(chunk)}/{len(firmware)}", end="", flush=True)
+        print()
+        r = self.command(CMD_CHECK_FIRMWARE,
+                         struct.pack("<III", 0, len(firmware), crc32_mpeg2(firmware)))
+        if r[0] != 1:
+            raise IOError("firmware checksum rejected by the sensor")
+        # Soft reset the MCU into the new firmware
+        self.command(CMD_RESET, b"\x02\x14", reply=False)
+
+
+def open_sensor():
+    sensor = Sensor()
+    sensor.init()
+    return sensor
+
+
+def reopen(sensor):
+    sensor.close()
+    time.sleep(1)
+    return open_sensor()
+
+
+def load_firmware(path):
+    if path:
+        data = open(path, "rb").read()
+    else:
+        print(f"Downloading {TARGET_FIRMWARE} from goodix-fp-linux-dev/goodix-firmware...")
+        data = urllib.request.urlopen(FIRMWARE_URL, timeout=30).read()
+    if hashlib.sha256(data).hexdigest() != FIRMWARE_SHA256:
+        sys.exit("Firmware checksum mismatch, refusing to flash")
+    return data
+
+
+def status():
+    sensor = open_sensor()
+    firmware, psk = sensor.firmware(), sensor.psk_ok()
+    sensor.close()
+    print(f"Firmware:  {firmware}")
+    print(f"Linux PSK: {'yes' if psk else 'no'}")
+    ready = firmware == TARGET_FIRMWARE and psk
+    print("Ready for the goodixtls511 driver." if ready else
+          "Not provisioned: run 'goodix511-provision provision'.")
+    return 0 if ready else 1
+
+
+def provision(firmware_path, assume_yes):
+    firmware = load_firmware(firmware_path)
+    print(__doc__.split("\n\n", 2)[2].strip())
+    if not assume_yes and input("Type ERASE to continue: ").strip() != "ERASE":
+        return 1
+
+    sensor = open_sensor()
+    previous = None
+    for _ in range(4):
+        version, psk = sensor.firmware(), sensor.psk_ok()
+        print(f"Firmware {version}, Linux PSK: {'yes' if psk else 'no'}")
+        if version == previous:
+            sys.exit("Firmware did not change, stopping")
+        previous = version
+
+        if version == TARGET_FIRMWARE and psk:
+            sensor.close()
+            print("Done: the sensor is ready for the goodixtls511 driver.")
+            return 0
+        if version.startswith(VALID_FIRMWARE_PREFIX):
+            print("Erasing the application firmware...")
+            sensor.erase_app()
+        elif version == IAP_FIRMWARE:
+            if not psk:
+                print("Writing the PSK...")
+                sensor.write_psk()
+            print(f"Flashing {TARGET_FIRMWARE}...")
+            sensor.flash(firmware)
+        else:
+            sys.exit(f"Unknown firmware '{version}', stopping")
+        sensor = reopen(sensor)
+    sys.exit("Provisioning did not converge")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = parser.add_subparsers(dest="action", required=True)
+    sub.add_parser("status", help="show firmware and PSK state (read-only)")
+    p = sub.add_parser("provision", help="erase, write the PSK and flash the firmware")
+    p.add_argument("--firmware", help=f"local {TARGET_FIRMWARE}.bin instead of downloading it")
+    p.add_argument("--yes", action="store_true", help="do not ask for confirmation")
+    args = parser.parse_args()
+    try:
+        return status() if args.action == "status" else provision(args.firmware, args.yes)
+    except usb.core.USBError as error:
+        if error.errno == 13:
+            sys.exit("Permission denied: run as root or stop fprintd first")
+        raise
+
+
+if __name__ == "__main__":
+    sys.exit(main())

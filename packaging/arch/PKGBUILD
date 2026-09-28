@@ -1,0 +1,58 @@
+# Maintainer: goodixtls511 contributors
+# Based on the Arch Linux libfprint PKGBUILD
+
+pkgname=libfprint-goodixtls511
+_libfprint=1.94.100
+_driver=0.1.0
+pkgver=${_libfprint}.goodixtls511.${_driver}
+pkgrel=1
+pkgdesc="libfprint with the goodixtls511 driver for the Goodix 27c6:5117 fingerprint reader"
+url="https://github.com/danieledisint/libfprint-goodixtls511"
+arch=(x86_64)
+license=(LGPL-2.1-or-later)
+depends=(
+  libgcc
+  glib2
+  glibc
+  libgudev
+  libgusb
+  opencv
+  openssl
+  pixman
+)
+makedepends=(
+  git
+  glib2-devel
+  gobject-introspection
+  meson
+  systemd
+)
+optdepends=('python-pyusb: goodix511-provision sensor setup tool')
+provides=("libfprint=${_libfprint}" libfprint-2.so)
+conflicts=(libfprint libfprint-git libfprint-tod)
+groups=(fprint)
+source=("libfprint::git+https://gitlab.freedesktop.org/libfprint/libfprint.git#tag=v${_libfprint}"
+        "goodixtls511::git+${url}.git#tag=v${_driver}")
+b2sums=('SKIP' 'SKIP')
+
+prepare() {
+  cp -r goodixtls511/driver/goodixtls511 libfprint/libfprint/drivers/
+  git -C libfprint apply "$srcdir/goodixtls511/patches/libfprint-${_libfprint}-goodixtls511.patch"
+}
+
+build() {
+  local meson_options=(
+    -D drivers=all
+    -D doc=false
+    -D installed-tests=false
+  )
+
+  arch-meson libfprint build "${meson_options[@]}"
+  meson compile -C build
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+  install -Dm755 goodixtls511/tools/goodix511-provision "$pkgdir/usr/bin/goodix511-provision"
+  install -Dm644 goodixtls511/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
