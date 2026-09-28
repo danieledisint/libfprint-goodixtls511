@@ -1,6 +1,6 @@
 /*
  * Goodix 27c6:5117 (TLS) driver for libfprint
- * Copyright (C) 2026 goodixtls511 contributors
+ * Copyright (C) 2026 danieledisint <93646388+danieledisint@users.noreply.github.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public

@@ -1,9 +1,9 @@
-# Maintainer: goodixtls511 contributors
+# Maintainer: danieledisint <93646388+danieledisint@users.noreply.github.com>
 # Based on the Arch Linux libfprint PKGBUILD
 
 pkgname=libfprint-goodixtls511
 _libfprint=1.94.100
-_driver=0.1.1
+_driver=0.1.2
 pkgver=${_libfprint}.goodixtls511.${_driver}
 pkgrel=1
 pkgdesc="libfprint with the goodixtls511 driver for the Goodix 27c6:5117 fingerprint reader"

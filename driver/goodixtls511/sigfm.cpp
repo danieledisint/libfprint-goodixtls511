@@ -1,7 +1,7 @@
 /*
  * SIGFM: SIFT-based matcher for small fingerprint sensors
  * Copyright (C) 2022 Natasha England-Elbro, Alexander Meiler (original)
- * Copyright (C) 2026 goodixtls511 contributors
+ * Copyright (C) 2026 danieledisint <93646388+danieledisint@users.noreply.github.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public

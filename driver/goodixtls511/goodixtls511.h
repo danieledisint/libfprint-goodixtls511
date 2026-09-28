@@ -1,6 +1,6 @@
 /*
  * Goodix 27c6:5117 (TLS) driver for libfprint
- * Copyright (C) 2026 goodixtls511 contributors
+ * Copyright (C) 2026 danieledisint <93646388+danieledisint@users.noreply.github.com>
  *
  * Protocol knowledge and MCU configuration come from goodix-fp-dump and the
  * goodix-fp-linux-dev libfprint fork:

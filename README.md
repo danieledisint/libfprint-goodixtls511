@@ -144,6 +144,8 @@ distribution documents it (e.g. `auth sufficient pam_fprintd.so` at the top of
 
 ## Credits and license
 
+- Driver, SIGFM integration, provisioning tool and packaging: developed by
+  [danieledisint](https://github.com/danieledisint).
 - Driver (`driver/`, `patches/`): LGPL-2.1-or-later, like libfprint (`LICENSE`).
 - Provisioning tool (`tools/`): MIT, derived from goodix-fp-dump.
 - Protocol knowledge, MCU configuration and provisioning sequence:
