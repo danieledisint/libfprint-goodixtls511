@@ -125,7 +125,7 @@ static const guint8 goodix_fdt_mode_2[] = {
 
 /* Host-side matching (SIGFM): enrollment samples, upscale factor before SIFT,
  * minimum keypoints per image, match score threshold, print format version. */
-#define GOODIX_ENROLL_STAGES 15
+#define GOODIX_ENROLL_STAGES 30
 #define GOODIX_SIGFM_SCALE 2
 #define GOODIX_SIGFM_MIN_KEYPOINTS 30
 #define GOODIX_SIGFM_THRESHOLD 40
